@@ -1,0 +1,22 @@
+# --- Git / OS ---
+.DS_Store
+Thumbs.db
+.vscode/
+
+# --- Java / Spring Boot ---
+target/
+*.class
+*.log
+.mvn/
+.settings/
+.project
+.classpath
+
+# --- Node.js / React ---
+node_modules/
+build/
+dist/
+.env
+
+# --- PlatformIO (ESP32) ---
+.pio/
