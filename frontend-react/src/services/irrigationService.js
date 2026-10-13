@@ -42,3 +42,28 @@ export const getMeasurementsHistory = async (page = 0, size = 10) => {
   });
   return response.data; // Renvoie la liste paginée des mesures
 };
+
+// Récupérer les seuils actuels
+export const getSettingsThresholds = async () => {
+  const response = await api.get('/api/v1/settings/thresholds');
+  return response.data;
+};
+
+// Mettre à jour les seuils
+export const updateSettingsThresholds = async (thresholds) => {
+  const response = await api.put('/api/v1/settings/thresholds', thresholds);
+  return response.data;
+};
+
+
+// Récupérer les alertes et anomalies système
+export const getAlerts = async () => {
+  const response = await api.get('/api/v1/alerts');
+  return response.data;
+};
+
+// Récupérer le statut de l'appareil IoT (ESP32)
+export const getDeviceStatus = async () => {
+  const response = await api.get('/api/v1/device/status');
+  return response.data;
+};
