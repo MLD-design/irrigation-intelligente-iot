@@ -1,13 +1,22 @@
-import React from 'react';
-// Si tu veux importer ton composant (attention à l'orthographe du fichier Dashbord.jsx)
-import Dashboard from './components/Dashbord';
+import { Routes, Route, Navigate } from 'react-router-dom';
+import Layout from './components/Layout';
+import Dashboard from './pages/Dashboard';
+import MeasurementHistory from './pages/MeasurementHistory';
+import IrrigationHistory from './pages/IrrigationHistory';
+import Settings from './pages/Settings';
+import Alerts from './pages/Alerts';
 
-function App() {
+export default function App() {
   return (
-    <div>
-      <Dashboard />
-    </div>
+    <Routes>
+      <Route element={<Layout />}>
+        <Route path="/" element={<Dashboard />} />
+        <Route path="/mesures" element={<MeasurementHistory />} />
+        <Route path="/irrigation" element={<IrrigationHistory />} />
+        <Route path="/parametres" element={<Settings />} />
+        <Route path="/alertes" element={<Alerts />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Route>
+    </Routes>
   );
 }
-
-export default App;

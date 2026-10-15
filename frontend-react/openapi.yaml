@@ -1,0 +1,712 @@
+openapi: 3.1.0
+
+info:
+  title: Irrigation Intelligente API
+  version: 1.0.0
+  description: |
+    Contrat REST du système d'irrigation intelligente.
+    Le backend Spring Boot centralise les mesures, les commandes,
+    les paramètres et les alertes.
+    L'ESP32 communique avec le backend via HTTP/REST.
+    Le frontend web consomme les endpoints de cette API.
+
+servers:
+  - url: http://localhost:8081
+    description: Environnement local de développement
+
+tags:
+  - name: System
+    description: Disponibilité du backend
+  - name: Measurements
+    description: Mesures et historiques des capteurs
+  - name: Irrigation
+    description: État de la pompe et commandes d'irrigation
+  - name: Device
+    description: Communication entre le backend et l'ESP32
+  - name: Settings
+    description: Paramètres d'irrigation
+  - name: Alerts
+    description: Alertes et notifications
+
+paths:
+
+  /api/v1/health:
+    get:
+      tags: [System]
+      operationId: getHealth
+      summary: Vérifier la disponibilité du backend
+      responses:
+        "200":
+          description: Backend disponible
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, timestamp]
+                properties:
+                  status:
+                    type: string
+                    const: UP
+                  timestamp:
+                    type: string
+                    format: date-time
+
+  /api/v1/measurements:
+    post:
+      tags: [Measurements]
+      operationId: createMeasurement
+      summary: Enregistrer une mesure envoyée par l'ESP32
+      security:
+        - deviceKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MeasurementInput"
+            example:
+              deviceId: esp32-01
+              soilMoisture: 42.5
+              temperature: 28.3
+              measuredAt: "2026-10-12T20:30:00Z"
+      responses:
+        "201":
+          description: Mesure enregistrée
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Measurement"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/measurements/latest:
+    get:
+      tags: [Measurements]
+      operationId: getLatestMeasurement
+      summary: Récupérer la dernière mesure
+      parameters:
+        - $ref: "#/components/parameters/DeviceIdQuery"
+      responses:
+        "200":
+          description: Dernière mesure disponible
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Measurement"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/measurements/history:
+    get:
+      tags: [Measurements]
+      operationId: getMeasurementHistory
+      summary: Consulter l'historique des mesures
+      parameters:
+        - $ref: "#/components/parameters/DeviceIdQuery"
+        - name: from
+          in: query
+          description: Date de début incluse, au format ISO 8601
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          description: Date de fin incluse, au format ISO 8601
+          schema:
+            type: string
+            format: date-time
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Size"
+      responses:
+        "200":
+          description: Historique paginé des mesures
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeasurementPage"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/v1/irrigation/status:
+    get:
+      tags: [Irrigation]
+      operationId: getIrrigationStatus
+      summary: Consulter l'état connu de la pompe
+      responses:
+        "200":
+          description: État connu de l'irrigation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IrrigationStatus"
+
+  /api/v1/irrigation/commands:
+    post:
+      tags: [Irrigation]
+      operationId: createIrrigationCommand
+      summary: Demander le démarrage ou l'arrêt de la pompe
+      description: |
+        Enregistre une commande à destination de l'ESP32.
+        HTTP 202 signifie que la commande est acceptée pour traitement,
+        pas que la pompe a effectivement démarré ou s'est arrêtée.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IrrigationCommandInput"
+            example:
+              action: START
+              source: MANUAL
+      responses:
+        "202":
+          description: Commande acceptée pour traitement
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IrrigationCommand"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/irrigation/commands/{commandId}:
+    get:
+      tags: [Irrigation]
+      operationId: getIrrigationCommand
+      summary: Consulter le statut d'une commande
+      parameters:
+        - $ref: "#/components/parameters/CommandId"
+      responses:
+        "200":
+          description: Statut de la commande
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IrrigationCommand"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/irrigation/history:
+    get:
+      tags: [Irrigation]
+      operationId: getIrrigationHistory
+      summary: Consulter l'historique des commandes d'irrigation
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Size"
+      responses:
+        "200":
+          description: Historique paginé des commandes
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IrrigationHistoryPage"
+
+  /api/v1/device/commands/next:
+    get:
+      tags: [Device]
+      operationId: getNextDeviceCommand
+      summary: Récupérer la prochaine commande destinée à l'ESP32
+      description: |
+        L'ESP32 interroge périodiquement cet endpoint.
+        Le backend doit réserver atomiquement une commande à un seul
+        traitement afin d'éviter son exécution par plusieurs requêtes.
+        Une réponse 204 signifie qu'aucune commande n'est disponible.
+      security:
+        - deviceKey: []
+      responses:
+        "200":
+          description: Une commande a été attribuée au dispositif
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IrrigationCommand"
+        "204":
+          description: Aucune commande en attente
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/device/commands/{commandId}/result:
+    post:
+      tags: [Device]
+      operationId: reportDeviceCommandResult
+      summary: Transmettre le résultat d'exécution d'une commande
+      security:
+        - deviceKey: []
+      parameters:
+        - $ref: "#/components/parameters/CommandId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommandResultInput"
+            example:
+              status: EXECUTED
+              message: "Pompe démarrée"
+      responses:
+        "200":
+          description: Résultat enregistré
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IrrigationCommand"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /api/v1/settings:
+    get:
+      tags: [Settings]
+      operationId: getSettings
+      summary: Consulter les paramètres d'irrigation
+      responses:
+        "200":
+          description: Paramètres actuels
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IrrigationSettings"
+
+    put:
+      tags: [Settings]
+      operationId: updateSettings
+      summary: Remplacer les paramètres d'irrigation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IrrigationSettingsInput"
+            example:
+              moistureThreshold: 35
+              automaticModeEnabled: true
+      responses:
+        "200":
+          description: Paramètres enregistrés
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IrrigationSettings"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /api/v1/alerts:
+    get:
+      tags: [Alerts]
+      operationId: getAlerts
+      summary: Consulter les alertes
+      parameters:
+        - name: acknowledged
+          in: query
+          description: Filtrer selon que l'alerte a été traitée
+          schema:
+            type: boolean
+        - name: severity
+          in: query
+          schema:
+            $ref: "#/components/schemas/AlertSeverity"
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Size"
+      responses:
+        "200":
+          description: Liste paginée des alertes
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AlertPage"
+
+  /api/v1/alerts/{alertId}/acknowledgement:
+    patch:
+      tags: [Alerts]
+      operationId: acknowledgeAlert
+      summary: Marquer une alerte comme traitée
+      parameters:
+        - $ref: "#/components/parameters/AlertId"
+      responses:
+        "200":
+          description: Alerte mise à jour
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Alert"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+components:
+
+  securitySchemes:
+    deviceKey:
+      type: apiKey
+      in: header
+      name: X-Device-Key
+      description: Clé d'authentification du dispositif ESP32.
+
+  parameters:
+    DeviceIdQuery:
+      name: deviceId
+      in: query
+      required: false
+      description: Identifiant du dispositif dont les mesures sont consultées
+      schema:
+        type: string
+
+    Page:
+      name: page
+      in: query
+      description: Numéro de page, à partir de zéro
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+
+    Size:
+      name: size
+      in: query
+      description: Nombre d'éléments par page
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+
+    CommandId:
+      name: commandId
+      in: path
+      required: true
+      schema:
+        type: string
+
+    AlertId:
+      name: alertId
+      in: path
+      required: true
+      schema:
+        type: string
+
+  responses:
+    BadRequest:
+      description: Requête invalide
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+
+    Unauthorized:
+      description: Authentification du dispositif requise ou invalide
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+
+    NotFound:
+      description: Ressource introuvable
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+
+    Conflict:
+      description: Conflit avec l'état actuel ou la commande
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+
+    InternalError:
+      description: Erreur interne du serveur
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+
+  schemas:
+
+    MeasurementInput:
+      type: object
+      additionalProperties: false
+      required:
+        - deviceId
+        - soilMoisture
+        - measuredAt
+      properties:
+        deviceId:
+          type: string
+          minLength: 1
+        soilMoisture:
+          type: number
+          minimum: 0
+          maximum: 100
+          description: Humidité du sol en pourcentage
+        temperature:
+          type: number
+          minimum: -40
+          maximum: 85
+          description: Température en degrés Celsius, si mesurée
+        measuredAt:
+          type: string
+          format: date-time
+          description: Date de mesure au format ISO 8601 avec fuseau horaire
+
+    Measurement:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - deviceId
+        - soilMoisture
+        - measuredAt
+        - receivedAt
+      properties:
+        id:
+          type: string
+        deviceId:
+          type: string
+        soilMoisture:
+          type: number
+          minimum: 0
+          maximum: 100
+        temperature:
+          type: number
+          minimum: -40
+          maximum: 85
+        measuredAt:
+          type: string
+          format: date-time
+        receivedAt:
+          type: string
+          format: date-time
+
+    MeasurementPage:
+      type: object
+      required: [content, page, size, totalElements]
+      properties:
+        content:
+          type: array
+          items:
+            $ref: "#/components/schemas/Measurement"
+        page:
+          type: integer
+        size:
+          type: integer
+        totalElements:
+          type: integer
+          minimum: 0
+
+    IrrigationCommandInput:
+      type: object
+      additionalProperties: false
+      required: [action, source]
+      properties:
+        action:
+          type: string
+          enum: [START, STOP]
+        source:
+          type: string
+          enum: [MANUAL, AUTOMATIC]
+
+    CommandStatus:
+      type: string
+      enum: [PENDING, EXECUTED, REJECTED, FAILED, EXPIRED]
+
+    IrrigationCommand:
+      type: object
+      required:
+        - commandId
+        - action
+        - source
+        - status
+        - createdAt
+      properties:
+        commandId:
+          type: string
+        action:
+          type: string
+          enum: [START, STOP]
+        source:
+          type: string
+          enum: [MANUAL, AUTOMATIC]
+        status:
+          $ref: "#/components/schemas/CommandStatus"
+        message:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+
+    CommandResultInput:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [EXECUTED, REJECTED, FAILED]
+        message:
+          type: string
+
+    IrrigationStatus:
+      type: object
+      required: [pumpState, mode, updatedAt]
+      properties:
+        pumpState:
+          type: string
+          enum: [ON, OFF, UNKNOWN]
+          description: État réel confirmé ou état inconnu
+        mode:
+          type: string
+          enum: [MANUAL, AUTOMATIC]
+        updatedAt:
+          type: string
+          format: date-time
+
+    IrrigationHistoryItem:
+      type: object
+      required: [id, action, source, status, createdAt]
+      properties:
+        id:
+          type: string
+        action:
+          type: string
+          enum: [START, STOP]
+        source:
+          type: string
+          enum: [MANUAL, AUTOMATIC]
+        status:
+          $ref: "#/components/schemas/CommandStatus"
+        createdAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+
+    IrrigationHistoryPage:
+      type: object
+      required: [content, page, size, totalElements]
+      properties:
+        content:
+          type: array
+          items:
+            $ref: "#/components/schemas/IrrigationHistoryItem"
+        page:
+          type: integer
+        size:
+          type: integer
+        totalElements:
+          type: integer
+          minimum: 0
+
+    IrrigationSettingsInput:
+      type: object
+      additionalProperties: false
+      required: [moistureThreshold, automaticModeEnabled]
+      properties:
+        moistureThreshold:
+          type: number
+          minimum: 0
+          maximum: 100
+          description: Seuil d'humidité du sol en pourcentage
+        automaticModeEnabled:
+          type: boolean
+
+    IrrigationSettings:
+      type: object
+      additionalProperties: false
+      required: [moistureThreshold, automaticModeEnabled, updatedAt]
+      properties:
+        moistureThreshold:
+          type: number
+          minimum: 0
+          maximum: 100
+        automaticModeEnabled:
+          type: boolean
+        updatedAt:
+          type: string
+          format: date-time
+
+    AlertSeverity:
+      type: string
+      enum: [INFO, WARNING, CRITICAL]
+
+    Alert:
+      type: object
+      required:
+        - id
+        - type
+        - severity
+        - message
+        - createdAt
+        - acknowledged
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          enum:
+            - LOW_MOISTURE
+            - HIGH_TEMPERATURE
+            - SENSOR_FAILURE
+            - DEVICE_OFFLINE
+            - PUMP_FAILURE
+        severity:
+          $ref: "#/components/schemas/AlertSeverity"
+        message:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        acknowledged:
+          type: boolean
+        acknowledgedAt:
+          type: string
+          format: date-time
+
+    AlertPage:
+      type: object
+      required: [content, page, size, totalElements]
+      properties:
+        content:
+          type: array
+          items:
+            $ref: "#/components/schemas/Alert"
+        page:
+          type: integer
+        size:
+          type: integer
+        totalElements:
+          type: integer
+          minimum: 0
+
+    ApiError:
+      type: object
+      required: [status, error, message, timestamp, path]
+      properties:
+        status:
+          type: integer
+        error:
+          type: string
+        message:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+        path:
+          type: string
