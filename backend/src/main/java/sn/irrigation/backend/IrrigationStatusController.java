@@ -30,7 +30,8 @@ public class IrrigationStatusController {
         var latestCommand = repository.findTop20ByOrderByCreatedAtDesc()
                 .stream()
                 .filter(command ->
-                        "EXECUTED".equals(command.getStatus())
+                        !command.isSimulated()
+                        && "EXECUTED".equals(command.getStatus())
                         && ("START".equals(command.getAction())
                         || "STOP".equals(command.getAction())))
                 .findFirst();

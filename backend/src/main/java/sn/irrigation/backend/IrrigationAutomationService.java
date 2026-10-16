@@ -1,6 +1,8 @@
 
 package sn.irrigation.backend;
 
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 
 import org.springframework.stereotype.Service;
@@ -39,29 +41,30 @@ public class IrrigationAutomationService {
         List<IrrigationCommand> commands =
                 commandRepository.findTop20ByOrderByCreatedAtDesc();
 
-        // Chercher la dernière commande START ou STOP exécutée.
+        // Les commandes simulees ne definissent pas l'etat physique.
         boolean pumpOn = commands.stream()
                 .filter(command ->
-                        "EXECUTED".equals(command.getStatus())
+                        !command.isSimulated()
+                        && "EXECUTED".equals(command.getStatus())
                         && ("START".equals(command.getAction())
                         || "STOP".equals(command.getAction())))
                 .findFirst()
                 .map(command -> "START".equals(command.getAction()))
                 .orElse(false);
 
-        // Chercher une commande qui attend encore d'être transmise.
+        // Les commandes simulees ne doivent pas bloquer l'automatisation.
         boolean commandNotDelivered = commands.stream()
                 .anyMatch(command ->
-                        "PENDING".equals(command.getStatus())
+                        !command.isSimulated()
+                        && "PENDING".equals(command.getStatus())
                         && command.getDeliveredAt() == null
                         && ("START".equals(command.getAction())
                         || "STOP".equals(command.getAction())));
 
-        // Une commande déjà transmise doit recevoir son résultat
-        // avant que le backend ne crée un ordre contradictoire.
         boolean commandAlreadyDelivered = commands.stream()
                 .anyMatch(command ->
-                        "PENDING".equals(command.getStatus())
+                        !command.isSimulated()
+                        && "PENDING".equals(command.getStatus())
                         && command.getDeliveredAt() != null
                         && ("START".equals(command.getAction())
                         || "STOP".equals(command.getAction())));
@@ -74,18 +77,17 @@ public class IrrigationAutomationService {
             action = "STOP";
         }
 
-    
-        // Si une commande a déjà été transmise à l'ESP32,
-        // on attend son résultat avant de créer une autre commande.
+        // Attendre le resultat d'une commande physique deja livree.
         if (commandAlreadyDelivered) {
             return;
         }
 
-        // Rechercher une commande encore en attente de transmission.
+        // Adapter ou expirer une commande physique pas encore livree.
         if (commandNotDelivered) {
             IrrigationCommand pendingCommand = commands.stream()
                     .filter(command ->
-                            "PENDING".equals(command.getStatus())
+                            !command.isSimulated()
+                            && "PENDING".equals(command.getStatus())
                             && command.getDeliveredAt() == null
                             && ("START".equals(command.getAction())
                             || "STOP".equals(command.getAction())))
@@ -93,47 +95,42 @@ public class IrrigationAutomationService {
                     .orElse(null);
 
             if (pendingCommand != null) {
-
-                // Si aucune action n'est désormais nécessaire,
-                // annuler l'ancienne commande en la marquant EXPIRED.
                 if (action == null) {
                     pendingCommand.setStatus("EXPIRED");
                     pendingCommand.setCompletedAt(
-                            java.time.OffsetDateTime.now(
-                                    java.time.ZoneOffset.UTC));
+                            OffsetDateTime.now(ZoneOffset.UTC));
                     pendingCommand.setMessage(
-                            "Commande annulée : la dernière mesure ne nécessite plus cette action.");
+                            "Commande annulee : la mesure actuelle "
+                            + "ne necessite plus cette action.");
                     commandRepository.save(pendingCommand);
                     return;
                 }
 
-                // Sinon, adapter la commande à la mesure actuelle.
                 pendingCommand.setAction(action);
                 pendingCommand.setSource("AUTOMATIC");
                 pendingCommand.setMessage(
-                        "Commande automatique : humidité = "
-                        + soilMoisture + " %, seuil = " + threshold + " %");
+                        "Commande automatique : humidite = "
+                        + soilMoisture + " %, seuil = "
+                        + threshold + " %");
                 commandRepository.save(pendingCommand);
                 return;
             }
         }
 
-        // Aucune commande en attente et aucune action nécessaire.
         if (action == null) {
             return;
         }
 
-        // Créer une nouvelle commande automatique.
         IrrigationCommand command = new IrrigationCommand();
         command.setAction(action);
         command.setSource("AUTOMATIC");
         command.setStatus("PENDING");
+        command.setSimulated(false);
         command.setMessage(
-                "Commande automatique : humidité = "
-                + soilMoisture + " %, seuil = " + threshold + " %");
+                "Commande automatique : humidite = "
+                + soilMoisture + " %, seuil = "
+                + threshold + " %");
 
         commandRepository.save(command);
     }
 }
-
-

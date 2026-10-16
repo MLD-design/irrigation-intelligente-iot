@@ -20,3 +20,15 @@ dist/
 
 # --- PlatformIO (ESP32) ---
 .pio/
+
+# --- Secrets locaux ---
+.env.*
+!.env.example
+
+# --- Configuration locale du frontend ---
+frontend-react/.env
+frontend-react/.env.*
+!frontend-react/.env.example
+
+# --- Secrets du firmware ESP32 ---
+firmware/src/secrets.h

@@ -1,9 +1,13 @@
 
 package sn.irrigation.backend;
 
-import jakarta.persistence.*;
 import java.time.OffsetDateTime;
 import java.util.UUID;
+
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
 
 @Entity
 @Table(name = "irrigation_commands")
@@ -29,6 +33,10 @@ public class IrrigationCommand {
     private OffsetDateTime completedAt;
 
     private OffsetDateTime deliveredAt;
+
+    // true si la commande a ete simulee sans action physique.
+    @Column(nullable = false, columnDefinition = "TINYINT(1) NOT NULL DEFAULT 0")
+    private boolean simulated = false;
 
     public IrrigationCommand() {
     }
@@ -89,4 +97,11 @@ public class IrrigationCommand {
         this.deliveredAt = deliveredAt;
     }
 
+    public boolean isSimulated() {
+        return simulated;
+    }
+
+    public void setSimulated(boolean simulated) {
+        this.simulated = simulated;
+    }
 }
