@@ -1,4 +1,5 @@
 
+import process from 'node:process';
 import react from '@vitejs/plugin-react';
 import { defineConfig, loadEnv } from 'vite';
 

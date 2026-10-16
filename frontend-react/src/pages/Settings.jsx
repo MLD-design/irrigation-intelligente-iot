@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+
+import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getSettings, updateSettings } from '../api/settings';
 import ErrorMessage from '../components/ErrorMessage';
@@ -11,44 +12,52 @@ export default function Settings() {
     queryFn: getSettings,
   });
 
-  const [threshold, setThreshold] = useState('');
-  const [automatic, setAutomatic] = useState(false);
+  const [threshold, setThreshold] = useState(null);
+  const [automatic, setAutomatic] = useState(null);
   const [validation, setValidation] = useState(null);
 
-  // Remplit le formulaire quand les paramètres sont chargés
-  useEffect(() => {
-    if (data) {
-      setThreshold(String(data.moistureThreshold));
-      setAutomatic(data.automaticModeEnabled);
-    }
-  }, [data]);
+  const displayedThreshold =
+    threshold ?? (data ? String(data.moistureThreshold) : '');
+
+  const displayedAutomatic =
+    automatic ?? (data ? data.automaticModeEnabled : false);
 
   const save = useMutation({
     mutationFn: updateSettings,
     onSuccess: (saved) => {
       queryClient.setQueryData(['settings'], saved);
-      // Le mode affiché sur le tableau de bord peut avoir changé
+      setThreshold(null);
+      setAutomatic(null);
       queryClient.invalidateQueries({ queryKey: ['irrigation', 'status'] });
     },
   });
 
   function handleSubmit(e) {
     e.preventDefault();
-    const value = Number(threshold);
+    const value = Number(displayedThreshold);
 
-    if (threshold.trim() === '' || Number.isNaN(value) || value < 0 || value > 100) {
+    if (
+      displayedThreshold.trim() === '' ||
+      Number.isNaN(value) ||
+      value < 0 ||
+      value > 100
+    ) {
       setValidation('Le seuil doit être un nombre compris entre 0 et 100.');
       return;
     }
+
     setValidation(null);
 
-    // Le contrat impose d'envoyer les DEUX champs à chaque PUT
-    save.mutate({ moistureThreshold: value, automaticModeEnabled: automatic });
+    save.mutate({
+      moistureThreshold: value,
+      automaticModeEnabled: displayedAutomatic,
+    });
   }
 
   const dirty =
     data &&
-    (Number(threshold) !== data.moistureThreshold || automatic !== data.automaticModeEnabled);
+    (Number(displayedThreshold) !== data.moistureThreshold ||
+      displayedAutomatic !== data.automaticModeEnabled);
 
   if (isLoading) return <p>Chargement...</p>;
 
@@ -66,19 +75,22 @@ export default function Settings() {
               min="0"
               max="100"
               step="0.1"
-              value={threshold}
+              value={displayedThreshold}
               onChange={(e) => {
                 setThreshold(e.target.value);
                 save.reset();
               }}
             />
           </label>
-          <small>L'irrigation automatique se déclenche sous ce seuil.</small>
+
+          <small>
+            L'irrigation automatique se déclenche sous ce seuil.
+          </small>
 
           <label className="checkbox">
             <input
               type="checkbox"
-              checked={automatic}
+              checked={displayedAutomatic}
               onChange={(e) => {
                 setAutomatic(e.target.checked);
                 save.reset();
@@ -88,15 +100,20 @@ export default function Settings() {
           </label>
 
           {validation && <p className="error">{validation}</p>}
-          {/* 400 ou 409 renvoyés par le backend */}
           <ErrorMessage error={save.error} />
-          {save.isSuccess && <p className="success">Paramètres enregistrés.</p>}
+
+          {save.isSuccess && (
+            <p className="success">Paramètres enregistrés.</p>
+          )}
 
           <button type="submit" disabled={save.isPending || !dirty}>
             {save.isPending ? 'Enregistrement...' : 'Enregistrer'}
           </button>
 
-          <small>Dernière modification : {new Date(data.updatedAt).toLocaleString()}</small>
+          <small>
+            Dernière modification :{' '}
+            {new Date(data.updatedAt).toLocaleString()}
+          </small>
         </form>
       )}
     </div>
