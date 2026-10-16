@@ -32,3 +32,10 @@ frontend-react/.env.*
 
 # --- Secrets du firmware ESP32 ---
 firmware/src/secrets.h
+
+# --- Sauvegardes locales de la base de données ---
+*.sql
+*.sql.gz
+
+# --- Docker ---
+.env.docker

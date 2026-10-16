@@ -1,0 +1,4 @@
+﻿.git
+.pio
+src/secrets.h
+__pycache__
