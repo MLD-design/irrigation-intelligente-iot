@@ -237,3 +237,43 @@ jobs:
 
       - name: Nettoyer les anciennes images inutilisees
         run: docker image prune -f
+  flash_firmware:
+    name: Televersement automatique ESP32
+    runs-on: [self-hosted, Windows, X64]
+    needs: deploy
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    defaults:
+      run:
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -command ". '{0}'"
+    steps:
+      - name: Recuperer le code
+        uses: actions/checkout@v4
+      - name: Verifier le port USB
+        run: |
+          $port = Get-CimInstance Win32_SerialPort |
+            Where-Object { $_.DeviceID -eq "COM7" -and $_.Name -like "*CP210x*" }
+          if (-not $port) {
+            throw "ESP32 non detecte sur COM7. Verifier le cable USB."
+          }
+          Write-Host "ESP32 detecte sur COM7."
+      - name: Preparer les secrets locaux
+        run: |
+          $source = "C:\Users\SBS\irrigation-intelligente-iot\firmware\src\secrets.h"
+          $destination = Join-Path $env:GITHUB_WORKSPACE "firmware\src\secrets.h"
+          if (-not (Test-Path $source)) {
+            throw "Le fichier local secrets.h est introuvable."
+          }
+          Copy-Item $source $destination -Force
+      - name: Compiler et televerser le firmware
+        run: |
+          $pio = "$env:USERPROFILE\.platformio\penv\Scripts\pio.exe"
+          if (-not (Test-Path $pio)) {
+            throw "PlatformIO est introuvable pour le compte du runner."
+          }
+          & $pio run -d "$env:GITHUB_WORKSPACE\firmware" -e esp32dev --target upload --upload-port COM7
+          if ($LASTEXITCODE -ne 0) {
+            throw "Echec de compilation ou de televersement du firmware."
+          }
+      - name: Confirmer le televersement
+        run: |
+          Write-Host "La commande de televersement s'est terminee sans erreur."
