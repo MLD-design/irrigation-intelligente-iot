@@ -172,6 +172,7 @@ jobs:
             ghcr.io/mld-design/irrigation-intelligente-iot-firmware-builder:${{ github.sha }}
 
  
+ 
   deploy:
     name: Deploiement Docker sur le PC Windows
     runs-on: [self-hosted, Windows, X64]
@@ -236,8 +237,9 @@ jobs:
             Write-Host "Package accessible :" $package.name
           }
           catch {
-            $status = $_.Exception.Response.StatusCode.value__
-            Write-Host "Code HTTP :" $status
+            if ($_.Exception.Response) {
+              Write-Host "Code HTTP :" ([int]$_.Exception.Response.StatusCode)
+            }
             throw "Impossible de lire les metadonnees du package backend."
           }
 
@@ -250,6 +252,14 @@ jobs:
 
           if ($LASTEXITCODE -ne 0) {
             throw "Echec de connexion a GHCR avec GHCR_READ_TOKEN"
+          }
+
+      - name: Tester le telechargement de l'image backend
+        run: |
+          docker pull ghcr.io/mld-design/irrigation-intelligente-iot-backend:latest
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "Le telechargement de l'image backend a echoue."
           }
 
       - name: Verifier le dossier de deploiement
