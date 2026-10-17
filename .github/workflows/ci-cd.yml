@@ -177,23 +177,29 @@ jobs:
     needs: docker
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
+    defaults:
+      run:
+        shell: powershell -ExecutionPolicy Bypass {0}
+
     steps:
       - name: Verifier Docker
-        shell: powershell
-        run: docker info
+        run: |
+          docker info
+          if ($LASTEXITCODE -ne 0) {
+            throw "Docker Desktop n'est pas accessible"
+          }
 
       - name: Se connecter a GHCR
-        shell: powershell
         env:
           GHCR_READ_TOKEN: ${{ secrets.GHCR_READ_TOKEN }}
+          GHCR_USER: ${{ github.actor }}
         run: |
-          $env:GHCR_READ_TOKEN | docker login ghcr.io -u $env:GITHUB_ACTOR --password-stdin
+          $env:GHCR_READ_TOKEN | docker login ghcr.io -u $env:GHCR_USER --password-stdin
           if ($LASTEXITCODE -ne 0) {
             throw "Echec de connexion a GHCR"
           }
 
       - name: Verifier le dossier de deploiement
-        shell: powershell
         run: |
           $projectPath = "C:\Users\SBS\irrigation-intelligente-iot"
           if (-not (Test-Path "$projectPath\compose.yaml")) {
@@ -201,7 +207,6 @@ jobs:
           }
 
       - name: Recuperer les nouvelles images
-        shell: powershell
         run: |
           docker compose -f "C:\Users\SBS\irrigation-intelligente-iot\compose.yaml" pull backend frontend
           if ($LASTEXITCODE -ne 0) {
@@ -209,13 +214,16 @@ jobs:
           }
 
       - name: Deployer backend et frontend
-        shell: powershell
         run: |
           docker compose -f "C:\Users\SBS\irrigation-intelligente-iot\compose.yaml" up -d --no-deps backend frontend
           if ($LASTEXITCODE -ne 0) {
             throw "Echec du deploiement"
           }
 
+      - name: Verifier les conteneurs
+        run: |
+          docker ps --filter "name=irrigation-backend"
+          docker ps --filter "name=irrigation-frontend"
+
       - name: Nettoyer les anciennes images inutilisees
-        shell: powershell
         run: docker image prune -f
