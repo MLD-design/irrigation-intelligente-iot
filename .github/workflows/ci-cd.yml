@@ -192,7 +192,7 @@ jobs:
       - name: Se connecter a GHCR
         env:
           GHCR_READ_TOKEN: ${{ secrets.GHCR_READ_TOKEN }}
-          GHCR_USER: ${{ github.actor }}
+          GHCR_USER: MLD-design
         run: |
           $env:GHCR_READ_TOKEN | docker login ghcr.io -u $env:GHCR_USER --password-stdin
           if ($LASTEXITCODE -ne 0) {
