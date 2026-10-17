@@ -24,7 +24,9 @@ public class IrrigationAutomationService {
     @Transactional
     public void evaluateMeasurement(Double soilMoisture) {
 
-        if (soilMoisture == null) {
+        if (soilMoisture == null
+                || soilMoisture < 0
+                || soilMoisture > 100) {
             return;
         }
 
@@ -32,42 +34,57 @@ public class IrrigationAutomationService {
                 .orElseGet(() -> settingsRepository.save(
                         new IrrigationSettings()));
 
+        // En mode manuel, aucune commande automatique n'est creee.
         if (!Boolean.TRUE.equals(settings.getAutomaticModeEnabled())) {
             return;
         }
 
-        double threshold = settings.getMoistureThreshold();
+        Double configuredThreshold = settings.getMoistureThreshold();
+
+        if (configuredThreshold == null
+                || configuredThreshold < 0
+                || configuredThreshold > 100) {
+            return;
+        }
+
+        double threshold = configuredThreshold;
 
         List<IrrigationCommand> commands =
                 commandRepository.findTop20ByOrderByCreatedAtDesc();
 
-        // Les commandes simulees ne definissent pas l'etat physique.
+        // Derniere commande START/STOP executee, simulation comprise.
         boolean pumpOn = commands.stream()
                 .filter(command ->
-                        !command.isSimulated()
-                        && "EXECUTED".equals(command.getStatus())
+                        "EXECUTED".equals(command.getStatus())
                         && ("START".equals(command.getAction())
                         || "STOP".equals(command.getAction())))
                 .findFirst()
                 .map(command -> "START".equals(command.getAction()))
                 .orElse(false);
 
-        // Les commandes simulees ne doivent pas bloquer l'automatisation.
-        boolean commandNotDelivered = commands.stream()
-                .anyMatch(command ->
-                        !command.isSimulated()
-                        && "PENDING".equals(command.getStatus())
-                        && command.getDeliveredAt() == null
-                        && ("START".equals(command.getAction())
-                        || "STOP".equals(command.getAction())));
-
+        // Une commande deja livree doit recevoir son resultat avant
+        // qu'une nouvelle commande automatique soit creee.
         boolean commandAlreadyDelivered = commands.stream()
                 .anyMatch(command ->
-                        !command.isSimulated()
-                        && "PENDING".equals(command.getStatus())
+                        "PENDING".equals(command.getStatus())
                         && command.getDeliveredAt() != null
                         && ("START".equals(command.getAction())
                         || "STOP".equals(command.getAction())));
+
+        if (commandAlreadyDelivered) {
+            return;
+        }
+
+        // Recherche d'une commande automatique encore en attente.
+        IrrigationCommand pendingCommand = commands.stream()
+                .filter(command ->
+                        "AUTOMATIC".equals(command.getSource())
+                        && "PENDING".equals(command.getStatus())
+                        && command.getDeliveredAt() == null
+                        && ("START".equals(command.getAction())
+                        || "STOP".equals(command.getAction())))
+                .findFirst()
+                .orElse(null);
 
         String action = null;
 
@@ -77,44 +94,27 @@ public class IrrigationAutomationService {
             action = "STOP";
         }
 
-        // Attendre le resultat d'une commande physique deja livree.
-        if (commandAlreadyDelivered) {
-            return;
-        }
+        // Si une commande automatique attend encore sa livraison,
+        // on l'adapte a la mesure actuelle ou on l'annule.
+        if (pendingCommand != null) {
 
-        // Adapter ou expirer une commande physique pas encore livree.
-        if (commandNotDelivered) {
-            IrrigationCommand pendingCommand = commands.stream()
-                    .filter(command ->
-                            !command.isSimulated()
-                            && "PENDING".equals(command.getStatus())
-                            && command.getDeliveredAt() == null
-                            && ("START".equals(command.getAction())
-                            || "STOP".equals(command.getAction())))
-                    .findFirst()
-                    .orElse(null);
-
-            if (pendingCommand != null) {
-                if (action == null) {
-                    pendingCommand.setStatus("EXPIRED");
-                    pendingCommand.setCompletedAt(
-                            OffsetDateTime.now(ZoneOffset.UTC));
-                    pendingCommand.setMessage(
-                            "Commande annulee : la mesure actuelle "
-                            + "ne necessite plus cette action.");
-                    commandRepository.save(pendingCommand);
-                    return;
-                }
-
+            if (action == null) {
+                pendingCommand.setStatus("EXPIRED");
+                pendingCommand.setCompletedAt(
+                        OffsetDateTime.now(ZoneOffset.UTC));
+                pendingCommand.setMessage(
+                        "Commande automatique annulee : "
+                        + "la mesure actuelle ne necessite plus cette action.");
+            } else {
                 pendingCommand.setAction(action);
-                pendingCommand.setSource("AUTOMATIC");
                 pendingCommand.setMessage(
                         "Commande automatique : humidite = "
                         + soilMoisture + " %, seuil = "
-                        + threshold + " %");
-                commandRepository.save(pendingCommand);
-                return;
+                        + threshold + " %.");
             }
+
+            commandRepository.save(pendingCommand);
+            return;
         }
 
         if (action == null) {
@@ -125,11 +125,15 @@ public class IrrigationAutomationService {
         command.setAction(action);
         command.setSource("AUTOMATIC");
         command.setStatus("PENDING");
-        command.setSimulated(false);
+
+        // La commande est destinee au firmware actuellement en simulation.
+        // Le resultat du firmware indiquera ensuite si elle a ete simulee.
+        command.setSimulated(true);
+
         command.setMessage(
-                "Commande automatique : humidite = "
+                "Commande automatique simulee : humidite = "
                 + soilMoisture + " %, seuil = "
-                + threshold + " %");
+                + threshold + " %.");
 
         commandRepository.save(command);
     }

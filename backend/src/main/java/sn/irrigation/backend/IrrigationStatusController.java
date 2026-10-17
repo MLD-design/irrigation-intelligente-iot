@@ -3,9 +3,9 @@ package sn.irrigation.backend;
 
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Map;
 
-import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -25,20 +25,21 @@ public class IrrigationStatusController {
     }
 
     @GetMapping("/status")
-    public ResponseEntity<Map<String, Object>> getStatus() {
+    public Map<String, Object> getStatus() {
 
-        var latestCommand = repository.findTop20ByOrderByCreatedAtDesc()
-                .stream()
+        List<IrrigationCommand> commands =
+                repository.findTop20ByOrderByCreatedAtDesc();
+
+        String pumpState = commands.stream()
                 .filter(command ->
-                        !command.isSimulated()
-                        && "EXECUTED".equals(command.getStatus())
+                        "EXECUTED".equals(command.getStatus())
                         && ("START".equals(command.getAction())
                         || "STOP".equals(command.getAction())))
-                .findFirst();
-
-        String pumpState = latestCommand
-                .map(command -> "START".equals(command.getAction())
-                        ? "ON" : "OFF")
+                .findFirst()
+                .map(command ->
+                        "START".equals(command.getAction())
+                                ? "ON"
+                                : "OFF")
                 .orElse("UNKNOWN");
 
         IrrigationSettings settings = settingsRepository.findById(1L)
@@ -46,12 +47,13 @@ public class IrrigationStatusController {
 
         String mode = Boolean.TRUE.equals(
                 settings.getAutomaticModeEnabled())
-                ? "AUTOMATIC" : "MANUAL";
+                        ? "AUTOMATIC"
+                        : "MANUAL";
 
-        return ResponseEntity.ok(Map.of(
+        return Map.of(
                 "pumpState", pumpState,
                 "mode", mode,
                 "updatedAt", OffsetDateTime.now(ZoneOffset.UTC)
-        ));
+        );
     }
 }

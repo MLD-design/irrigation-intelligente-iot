@@ -18,9 +18,7 @@ services:
       retries: 10
 
   backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
+    image: ghcr.io/mld-design/irrigation-intelligente-iot-backend:latest
     container_name: irrigation-backend
     restart: unless-stopped
     environment:
@@ -37,11 +35,7 @@ services:
       - irrigation-network
 
   frontend:
-    build:
-      context: ./frontend-react
-      dockerfile: Dockerfile
-      args:
-        VITE_API_URL: /api/v1
+    image: ghcr.io/mld-design/irrigation-intelligente-iot-frontend:latest
     container_name: irrigation-frontend
     restart: unless-stopped
     depends_on:

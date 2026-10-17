@@ -10,7 +10,7 @@
 
 // ==================== CONFIGURATION ====================
 
-const char* API_BASE_URL = "http://192.168.1.9:8082/api/v1";
+const char* API_BASE_URL = "http://192.168.1.3:8082/api/v1";
 const char* DEVICE_KEY = IRRIGATION_DEVICE_KEY;
 const char* DEVICE_ID = "ESP32-001";
 
