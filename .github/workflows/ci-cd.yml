@@ -173,6 +173,7 @@ jobs:
 
  
  
+  
   deploy:
     name: Deploiement Docker sur le PC Windows
     runs-on: [self-hosted, Windows, X64]
@@ -244,15 +245,11 @@ jobs:
           }
 
       - name: Se connecter a GHCR
-        env:
-          GHCR_USER: MLD-design
-          GHCR_TOKEN: ${{ secrets.GHCR_READ_TOKEN }}
-        run: |
-          $env:GHCR_TOKEN | docker login ghcr.io -u $env:GHCR_USER --password-stdin
-
-          if ($LASTEXITCODE -ne 0) {
-            throw "Echec de connexion a GHCR avec GHCR_READ_TOKEN"
-          }
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: MLD-design
+          password: ${{ secrets.GHCR_READ_TOKEN }}
 
       - name: Tester le telechargement de l'image backend
         run: |
